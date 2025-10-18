@@ -1,0 +1,11 @@
+*.xlsx
+*.csv
+inputs/
+scraper.log
+test.py
+*.html
+__pycache__
+todo
+output/
+ALL DATA/
+

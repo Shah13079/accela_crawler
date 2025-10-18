@@ -1,0 +1,11 @@
+psycopg2
+playwright
+scrapy
+pandas
+openpyxl
+SQLAlchemy 
+parsel
+psycopg2-binary
+anyio
+beautifulsoup4
+python-dateutil

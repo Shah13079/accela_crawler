@@ -1,0 +1,151 @@
+# Accela Building Permits Scraper
+
+A Python-based web scraper for extracting permit data from Accela Citizen Access portals. Designed to run continuously and handle updates to existing incomplete permits.
+
+## What This Does
+
+This scraper monitors permits from the Accela municipal portal. It checks for new permits from the last 30 days and updates any incomplete permits already in the database. The system is resilient to interruptions and can resume if the website goes into maintenance mode.
+
+## Project Structure
+
+```
+├── integration.py              # Main orchestrator - runs everything
+├── listing_scraper.py         # Scrapes permit listing/search pages
+├── detail_scraper.py          # Extracts detailed data from individual permit pages
+├── utilities.py               # Helper functions (date formatting, dropdowns, parsing)
+├── db_exporters_upsert.py     # Database models and upsert logic
+├── models/                    # SQLAlchemy models
+└── requirements.txt           # Python dependencies
+```
+
+## How It Works
+
+### Main Flow (`integration.py`)
+
+The scraper runs in phases:
+
+**Phase 1: Gather Permits**
+- Calls `listing_scraper.py` to search the last 30 days of permits
+- Loops through 8 permit types (Building Commercial, Residential, Electrical, etc.)
+- Extracts basic info: permit number, URL, address
+- Handles pagination across multiple result pages
+
+**Phase 2: Build Work Queue**
+- Queries database for incomplete permits not in the current scrape
+- Combines new permits + old incomplete permits into a worklist
+- Removes duplicates 
+- Saves worklist snapshot for potential resume
+
+**Phase 3: Extract Details**
+- For each permit in the worklist:
+  - Navigates to detail page using Playwright
+  - Calls `detail_scraper.py` to extract comprehensive data:
+    - Basic info (status, description, category)
+    - Owner & licensed professional
+    - Parcel/application info
+    - Contacts
+    - Inspections (with pagination)
+    - Conditions (with pagination)
+    - Valuations
+    - Related records
+    - Process history
+  - Updates checkpoint after each successful scrape
+
+**Phase 4: Save to Database**
+- Connection is configurable in config.json
+- Uses exporters in `db_exporters_upsert.py` to upsert data
+- Handles relationships between tables (property → permit → contacts)
+- Reconciles foreign keys for related permits
+
+### Resume & Maintenance Mode
+
+If the website goes into maintenance or the script crashes:
+- Progress is saved in `integration_checkpoint.json`
+- Worklist is preserved in `worklist_snapshot.json`
+- Next run automatically resumes from the last successful permit
+- Checkpoint files are cleaned up on successful completion
+
+### File Responsibilities
+
+**listing_scraper.py**
+- Visits the Accela search page
+- Iterates through permit types
+- Paginates through results
+- Returns list of permits with basic info
+
+**detail_scraper.py**
+- Navigates to individual permit detail pages
+- Extracts data from multiple tabs
+- Handles dynamic content and loading indicators
+- Manages pagination within tabs (inspections, conditions)
+- Returns 8 data structures with comprehensive permit info
+
+**utilities.py**
+- Date range calculations
+- Dropdown selection helpers
+- HTML parsing functions for tables and contact blocks
+- Extractors for owner, licensed professional, parcel info
+
+**db_exporters_upsert.py**
+- Contains exporter classes for each database table
+- Handles upsert logic (insert or update)
+- Manages database sessions and transactions
+- Each exporter knows how to map scraped data to its table
+
+
+## Quick Start (Local Testing)
+
+1. Install dependencies:
+```bash
+pip install -r requirements.txt
+playwright install chromium
+```
+
+2. Configure database connection in `db_exporters_upsert.py`
+
+3. Run the scraper:
+```bash
+python integration.py
+```
+
+For CSV-based batch processing:
+```bash
+python integrationcsv.py
+```
+
+The script will create checkpoint files automatically if interrupted. Just run it again to resume.
+
+## Database Tables
+
+The scraper populates these tables:
+- `property_address` - Physical locations
+- `permit` - Main permit records
+- `contact` - Owners, contractors, applicants
+- `property_detail` - Parcel and zoning info
+- `permit_inspection` - Inspection history
+- `permit_valuation` - Cost/valuation data
+- `permit_process` - Status workflow
+- `permit_related` - Linked permits
+- `permit_condition` - Permit conditions
+
+## Notes
+
+- Default search range: **30 days** (configurable in `config.json`)
+- Supports 8 permit types: Building Commercial/Residential, Electrical, Mechanical, Plumbing, Demolition, Moving, Building Revision
+- Headless browser mode by default (can change in integration files)
+- Timeout settings: 30 seconds for page loads, longer for specific elements
+- Completed permits are never re-scraped (marked with `is_completed=True`)
+
+## Troubleshooting
+
+**Maintenance mode detected:**
+- Script will exit and save checkpoint
+- Run again when site is back up - it will resume automatically
+
+**Checkpoint files remain after successful run:**
+- This shouldn't happen - check logs for errors during cleanup
+- Safe to delete manually: `integration_checkpoint.json` and `worklist_snapshot.json`
+
+**Permit missing data:**
+- Some fields may not exist on all permit types
+- Detail scraper uses safe extractors that return None if elements don't exist

@@ -1,0 +1,4 @@
+{
+    "db_url": "postgresql://postgres:root@localhost:5432/accela_db_new",
+    "date_range_days": 30
+}
